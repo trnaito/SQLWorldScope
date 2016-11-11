@@ -1,111 +1,94 @@
 
 /*====================================================================================================================
 
- Version 1.0 2016/11/09 Ryoichi Naito ryoichi.naito@thomsonreuters.com
+ Version 1.0 2016/11/10 Ryoichi Naito ryoichi.naito@thomsonreuters.com
 
- To search all available KPIs of all stocks, the final result from this query will be used as a stock list
- to pick available IBES2 items including KPIs.
-
- Temp tables:
- #measlist .. All available IBES2 items those stocks
- #ibsdsall .. All DS2 active stocks with EstPermID which is mapped to IBES2 items.
+ Check some ticker histories that has a delisted period, ticker changes, or M&As.
+ Basic queries to understand Worldscope schemas are included.
 
  Note: If you encountered an error 'Cannot drop the table...', please ignore and continue the rest of SQLs.
   
  ====================================================================================================================*/
 
-------------------------------------------------------------------------------
--- 1. List all PermID for current listed stocks where IBES2 data is available
-------------------------------------------------------------------------------
+-------------------------------------------------------------
+-- 1. All Japanese companies (about 7,400 companies in total)
+-------------------------------------------------------------
+select
+    m.*
+,   p.*
 /*
- Domestic securities: SecMstrX.SecCode -> PermSecMapX.SecCode where EntType=55 and RegCode= 1 -> PermSecMapX.EntPermID -> TREInfo.QuotePermID
- Global securities: GSecMstrX.SecCode -> PermSecMapX.SecCode where EntType=55 and RegCode= 0 -> PermSecMapX.EntPermID -> TREInfo.QuotePermID
-*/
----------------------------------- Take all Stocks from SecMstrX and GSecMstrX with EntPermID
-drop table #allg_ibes2
-select
-	gmst.SecCode
-,	gmst.Isin
-,	gmst.Name
-,	gmap.VenCode
-,	pmap.EntPermID
-,	pmap.EndDate
-,	iifo.QuotePermID
-,	iifo.EstPermID
-into #allg_ibes2
-from
-	GSecMstrX gmst
-	join GSecMapX gmap on gmst.SecCode = gmap.SecCode and gmap.VenType=2
-	join PermSecMapX pmap on gmst.SecCode=pmap.SecCode and pmap.RegCode=0 and pmap.EntType=55 and pmap.EndDate > getdate()
-	join TREInfo iifo on pmap.EntPermID = iifo.QuotePermID
-order by Name asc
+,   p.isrcode  -- Issuer code
+,   p.code  -- SecCode to map with the master table
+,   p.typ_      -- Security type where 1=North America, 6=Global
+,   p.vencode */
+from vw_securityMasterX m
+    join vw_wsCompanyMapping p on p.code = m.seccode and p.type_ = m.typ
+where 
+    m.Country='JPN'
+    and p.type_ = 6
+order by
+	name
 
-insert into #allg_ibes2
-select
-	mstr.SecCode
-,	mstr.Isin
-,	mstr.Name
-,	mapx.VenCode
-,	pmap.EntPermID
-,	pmap.EndDate
-,	iifo.QuotePermID
-,	iifo.EstPermID
-from
-	SecMstrX mstr
-	join SecMapX mapx on mstr.SecCode = mapx.SecCode and mapx.VenType=2
-	join PermSecMapX pmap on mstr.SecCode=pmap.SecCode and pmap.RegCode=1 and pmap.EntType=55 and pmap.EndDate > getdate()
-	join TREInfo iifo on pmap.EntPermID = iifo.QuotePermID
-order by Name asc
+-- With ticker (from DS2)
 
-select * from #allg_ibes2
-
-
---------------------------------- Retrieve all DS2 available stocks
-drop table #ds2all
-select
-	dmap.*
-,	difo.*
-into #ds2all
-from
-	vw_Ds2Mapping dmap
-	join vw_Ds2SecInfo difo on dmap.VenCode=difo.InfoCode
-where
-	difo.IsPrimQt = 1
-	and difo.StatusCode='A'
-
-drop table #ibsdsall
-select 
-	ibs2.SecCode
-,	ibs2.Name
-,	ibs2.EntPermID
-,	ibs2.EstPermID
-,	ds2.InfoCode
-,	ds2.DsQtName
-,	ds2.PrimaryExchange
-,	dsqt.DsLocalCode
-into #ibsdsall
-from
-	#allg_ibes2 ibs2
-	join #ds2all ds2 on ibs2.SecCode=ds2.SecCode
-	join Ds2CtryQtInfo dsqt on ds2.InfoCode=dsqt.InfoCode
 
 
 --------------------------------------------------------
--- 2. Pick only available items for FY 2016/10 - 2017/9
+-- 2. Data items
 --------------------------------------------------------
-drop table #measlist
+
+# The list of items for Historical
+select top 1000
+	Number	-- cross-references with Ws*DATA.Item
+,	Name
+,	Frequency-- C=current, H=historical
+,	DataType	-- A=alphanumeric, N=numeric
+,	Length_		-- string lendgh if DataType=A
+,	QType		-- A=alphanumeric, D=date, F=flag, I=integer, N=numeric
+,	SplitFlag
+,	Industry
+,	Units
+,	RefSect
+,	RefNumb
+,	Table_		-- table association. D=wsdata, I=wsidata, L=wsldata, M=wsmdata, N=wsndata, S=wssdata, X=wsxdata
+,	UsBasis
+,	NonUsBasis
+,	Month_ 
+ from Wsitem
+ where
+	Frequency='H'
+
+# Just as an example about "Unit".. ---------------------------------
 select
-	distinct(Measure)
-into #measlist
+    code -- primary link across all Worldscope(Ws*) tables
+,	item -- cross-references with all Ws*DATA tables where item=Ws*data.Item
 from
-	TRESumPer esum
+	vw_WSItemUnits
 where
-	EstPermID in (select distinct EstPermID from #ibsdsall)
-	and IsParent=0 -- Consolidated
-	and PerType=4 -- Year
-	and PerEndDate > GetDate()
-	and format(PerEndDate, 'yyyyMM') between '201610' and '201709'
-	and ExpireDate is null
+	item = 1001 -- net sales or revenues
+
+
+# Sample query for a historical BPS of ABC Mart (id=@ABCMA1) --------------------------
+select
+	m.id as qaID
+,	m.sedol
+,	m.name
+,	d.fiscalPeriodEndDate
+,	d.epsReportDate
+,	d.periodUpdateFlag
+,	d.periodUpdateDescription
+,	d.currencyOfDocument
+,	d.periodSource
+,	d.Value_,d.itemUnits
+from
+	vw_SecurityMasterX m
+	join vw_WsCompanyMapping w on w.code = m.seccode and w.type_ = m.typ
+	left join vw_WsItemData d on d.code = w.vencode
+									and d.item = 5476 -- BOOK VALUE PER SHARE
+									and d.freq = 'a' -- ANNUAL
+where
+	m.id = '@ABCMA1'
+
 
 
 ------------------------------------------------------------------------
