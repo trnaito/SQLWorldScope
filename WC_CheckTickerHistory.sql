@@ -13,6 +13,7 @@
 -------------------------------------------------------------
 -- 1. All Japanese companies (about 7,400 companies in total)
 -------------------------------------------------------------
+drop table #wsjp
 select
     m.*
 ,   p.*
@@ -21,6 +22,7 @@ select
 ,   p.code  -- SecCode to map with the master table
 ,   p.typ_      -- Security type where 1=North America, 6=Global
 ,   p.vencode */
+into #wsjp
 from vw_securityMasterX m
     join vw_wsCompanyMapping p on p.code = m.seccode and p.type_ = m.typ
 where 
@@ -30,7 +32,28 @@ order by
 	name
 
 -- With ticker (from DS2)
+drop table #ds2jp
+select
+	dmap.*
+,	difo.*
+into #ds2jp
+from
+	vw_Ds2Mapping dmap
+	join vw_Ds2SecInfo difo on dmap.VenCode=difo.InfoCode
+where
+	difo.IsPrimQt = 1
+	and difo.CountryTradingInName='JAPAN'
 
+select
+	w.*
+,	d.*
+,	l.DsLocalCode
+from
+	#wsjp w
+	join #ds2jp d on w.seccode=d.seccode
+	join Ds2CtryQtInfo l on d.InfoCode=l.InfoCode
+order by
+	l.DsLocalCode
 
 
 --------------------------------------------------------
@@ -87,8 +110,11 @@ from
 									and d.item = 5476 -- BOOK VALUE PER SHARE
 									and d.freq = 'a' -- ANNUAL
 where
-	m.id = '@ABCMA1'
+	m.id = '@SUMIT40'
 
+-- JAL @JAPAN304
+-- Bessi @SUMIT40
+-- 
 
 
 ------------------------------------------------------------------------
