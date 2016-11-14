@@ -167,9 +167,12 @@ from
 									and d.item = 5476 -- BOOK VALUE PER SHARE
 									and d.freq = 'a' -- ANNUAL
 where
-	m.id = '@SUMIT40'
+	m.id = '@NIPPO138'
 
 -- JAL @JAPAN304
 -- Bessi @SUMIT40
--- 
+-- shinnittestu sumikin 5401 , sumitomo kinzoku kogyo 5405
+-- Google (Class A) GOOG
+-- Google (Class C) 38259P70
 
+select * from #wsjp order by name
